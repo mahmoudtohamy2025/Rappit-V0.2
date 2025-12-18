@@ -1,0 +1,199 @@
+### Rappit API Authentication Testing
+### Use this file with REST Client extension in VS Code or similar tools
+
+@baseUrl = http://localhost:3000/api/v1
+@contentType = application/json
+
+### Variables (will be set after requests)
+@adminToken =
+@managerToken =
+@operatorToken =
+
+###############################################################################
+### HEALTH CHECK (Public)
+###############################################################################
+
+### Health Check
+GET {{baseUrl}}/health
+
+### Health Ready
+GET {{baseUrl}}/health/ready
+
+###############################################################################
+### AUTHENTICATION - Registration & Login
+###############################################################################
+
+### 1. Register New User & Organization
+POST {{baseUrl}}/auth/register
+Content-Type: {{contentType}}
+
+{
+  "email": "test@rappit.local",
+  "password": "TestPass123!",
+  "firstName": "Test",
+  "lastName": "User",
+  "organizationName": "Test Organization"
+}
+
+### 2. Login as Admin (Demo User)
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "admin@rappit.demo",
+  "password": "admin123"
+}
+
+### 3. Login as Manager (Demo User)
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "manager@rappit.demo",
+  "password": "manager123"
+}
+
+### 4. Login as Operator (Demo User)
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "operator@rappit.demo",
+  "password": "operator123"
+}
+
+### 5. Login with Specific Organization
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "admin@rappit.demo",
+  "password": "admin123",
+  "organizationId": "your-org-id-here"
+}
+
+###############################################################################
+### CURRENT USER
+###############################################################################
+
+### Get Current User Info
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{adminToken}}
+
+###############################################################################
+### ORGANIZATIONS
+###############################################################################
+
+### Get Current Organization
+GET {{baseUrl}}/organizations/current
+Authorization: Bearer {{adminToken}}
+
+### Get Organization Statistics
+GET {{baseUrl}}/organizations/current/stats
+Authorization: Bearer {{adminToken}}
+
+### Update Organization (ADMIN only)
+PATCH {{baseUrl}}/organizations/current
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Updated Organization Name",
+  "settings": {
+    "currency": "EGP",
+    "timezone": "Africa/Cairo",
+    "language": "ar"
+  }
+}
+
+###############################################################################
+### USERS MANAGEMENT
+###############################################################################
+
+### List All Users in Organization
+GET {{baseUrl}}/users
+Authorization: Bearer {{adminToken}}
+
+### Get Specific User
+GET {{baseUrl}}/users/user-id-here
+Authorization: Bearer {{adminToken}}
+
+### Invite User (ADMIN only)
+POST {{baseUrl}}/users
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "email": "newuser@example.com",
+  "firstName": "New",
+  "lastName": "User",
+  "password": "NewPass123!",
+  "role": "OPERATOR"
+}
+
+### Update User Role (ADMIN only)
+PATCH {{baseUrl}}/users/user-id-here
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "role": "MANAGER"
+}
+
+### Remove User from Organization (ADMIN only)
+DELETE {{baseUrl}}/users/user-id-here
+Authorization: Bearer {{adminToken}}
+
+###############################################################################
+### AUTHORIZATION TESTING
+###############################################################################
+
+### Try to invite user as OPERATOR (should fail with 403)
+POST {{baseUrl}}/users
+Authorization: Bearer {{operatorToken}}
+Content-Type: {{contentType}}
+
+{
+  "email": "shouldfail@example.com",
+  "firstName": "Should",
+  "lastName": "Fail",
+  "password": "Pass123!",
+  "role": "OPERATOR"
+}
+
+### Try to update organization as MANAGER (should fail with 403)
+PATCH {{baseUrl}}/organizations/current
+Authorization: Bearer {{managerToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Should Fail"
+}
+
+### Try to access protected endpoint without token (should fail with 401)
+GET {{baseUrl}}/users
+
+###############################################################################
+### USAGE NOTES
+###############################################################################
+
+# 1. Start your backend server:
+#    npm run start:dev
+#
+# 2. Run database migrations:
+#    npx prisma migrate deploy
+#
+# 3. Seed the database with demo data:
+#    npm run prisma:seed
+#
+# 4. Use this file to test endpoints:
+#    - Click "Send Request" above each request
+#    - Copy the access_token from login responses
+#    - Paste it into the @adminToken, @managerToken, or @operatorToken variables
+#
+# 5. Demo credentials (after seeding):
+#    admin@rappit.demo / admin123
+#    manager@rappit.demo / manager123
+#    operator@rappit.demo / operator123
+
+###############################################################################
