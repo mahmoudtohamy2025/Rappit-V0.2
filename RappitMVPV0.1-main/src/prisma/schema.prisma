@@ -1,0 +1,729 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ORGANIZATIONS & USERS
+// ============================================================================
+
+model Organization {
+  id         String   @id @default(uuid())
+  name       String
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  userOrganizations  UserOrganization[]
+  channels           Channel[]
+  warehouses         Warehouse[]
+  products           Product[]
+  skus               SKU[]
+  inventoryLevels    InventoryLevel[]
+  inventoryReservations InventoryReservation[]
+  inventoryAdjustments InventoryAdjustment[]
+  customers          Customer[]
+  orders             Order[]
+  orderTimelineEvents OrderTimelineEvent[]
+  shippingAccounts   ShippingAccount[]
+  shipments          Shipment[]
+  webhookEvents      WebhookEvent[]
+  integrationLogs    IntegrationLog[]
+  processedWebhookEvents ProcessedWebhookEvent[]
+  unmappedItems      UnmappedItem[]
+
+  @@index([isActive])
+  @@map("organizations")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  firstName String   @map("first_name")
+  lastName  String   @map("last_name")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  userOrganizations UserOrganization[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model UserOrganization {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  organizationId String   @map("organization_id")
+  role           UserRole
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("user_organizations")
+}
+
+enum UserRole {
+  ADMIN    // Full access
+  MANAGER  // Can manage operations
+  OPERATOR // Can execute operations only
+
+  @@map("user_role")
+}
+
+// ============================================================================
+// SALES CHANNELS: Shopify, WooCommerce
+// ============================================================================
+
+model Channel {
+  id             String      @id @default(uuid())
+  organizationId String      @map("organization_id")
+  name           String
+  type           ChannelType
+  config         Json        // Store API credentials, URLs, etc.
+  isActive       Boolean     @default(true) @map("is_active")
+  lastSyncAt     DateTime?   @map("last_sync_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  orders          Order[]
+  products        Product[]
+  webhookEvents   WebhookEvent[]
+  integrationLogs IntegrationLog[]
+  processedWebhookEvents ProcessedWebhookEvent[]
+  unmappedItems   UnmappedItem[]
+
+  @@index([organizationId])
+  @@index([organizationId, type])
+  @@index([organizationId, isActive])
+  @@map("channels")
+}
+
+enum ChannelType {
+  SHOPIFY
+  WOOCOMMERCE
+
+  @@map("channel_type")
+}
+
+// ============================================================================
+// PRODUCTS & SKUS
+// ============================================================================
+
+model Product {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  channelId      String?  @map("channel_id")
+  name           String
+  description    String?  @db.Text
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel?     @relation(fields: [channelId], references: [id])
+  skus         SKU[]
+
+  @@index([organizationId])
+  @@index([channelId])
+  @@map("products")
+}
+
+model SKU {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  productId      String   @map("product_id")
+  sku            String   @unique
+  barcode        String?
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product               Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventoryLevels       InventoryLevel[]
+  inventoryReservations InventoryReservation[]
+  inventoryAdjustments  InventoryAdjustment[]
+  orderItems            OrderItem[]
+
+  @@index([organizationId])
+  @@index([productId])
+  @@index([sku])
+  @@map("skus")
+}
+
+// ============================================================================
+// WAREHOUSES & INVENTORY
+// ============================================================================
+
+model Warehouse {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  code           String
+  address        Json?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inventoryLevels       InventoryLevel[]
+  inventoryReservations InventoryReservation[]
+  inventoryAdjustments  InventoryAdjustment[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([organizationId, isActive])
+  @@map("warehouses")
+}
+
+model InventoryLevel {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  skuId          String   @map("sku_id")
+  warehouseId    String   @map("warehouse_id")
+  available      Int      @default(0)
+  reserved       Int      @default(0)
+  damaged        Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sku          SKU          @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([skuId, warehouseId])
+  @@index([organizationId])
+  @@index([skuId])
+  @@index([warehouseId])
+  @@map("inventory_levels")
+}
+
+model InventoryReservation {
+  id                String    @id @default(uuid())
+  organizationId    String    @map("organization_id")
+  orderId           String    @map("order_id")
+  skuId             String    @map("sku_id")
+  warehouseId       String    @map("warehouse_id")
+  quantityReserved  Int       @map("quantity_reserved")
+  releasedAt        DateTime? @map("released_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku          SKU          @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([orderId])
+  @@index([skuId])
+  @@index([warehouseId])
+  @@index([releasedAt])
+  @@map("inventory_reservations")
+}
+
+model InventoryAdjustment {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  skuId          String   @map("sku_id")
+  warehouseId    String   @map("warehouse_id")
+  quantityDelta  Int      @map("quantity_delta")
+  reason         String
+  referenceId    String?  @map("reference_id")
+  notes          String?  @db.Text
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sku          SKU          @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([skuId])
+  @@index([warehouseId])
+  @@index([createdAt])
+  @@map("inventory_adjustments")
+}
+
+// ============================================================================
+// CUSTOMERS
+// ============================================================================
+
+model Customer {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  externalId     String?  @map("external_id")
+  firstName      String   @map("first_name")
+  lastName       String   @map("last_name")
+  email          String?
+  phone          String?
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  orders       Order[]
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId])
+  @@index([email])
+  @@map("customers")
+}
+
+// ============================================================================
+// ORDERS
+// ============================================================================
+
+model Order {
+  id                String        @id @default(uuid())
+  organizationId    String        @map("organization_id")
+  channelId         String?       @map("channel_id")
+  customerId        String        @map("customer_id")
+  externalOrderId   String?       @map("external_order_id")
+  orderNumber       String?       @map("order_number")
+  status            OrderStatus
+  paymentStatus     PaymentStatus @map("payment_status")
+  shippingAddress   Json          @map("shipping_address")
+  billingAddress    Json?         @map("billing_address")
+  subtotal          Float
+  shippingCost      Float         @map("shipping_cost")
+  taxAmount         Float         @map("tax_amount")
+  discountAmount    Float         @map("discount_amount")
+  totalAmount       Float         @map("total_amount")
+  currency          String        @default("SAR")
+  customerNote      String?       @map("customer_note") @db.Text
+  internalNotes     String?       @map("internal_notes") @db.Text
+  tags              String[]      @default([])
+  metadata          Json?
+  orderDate         DateTime      @map("order_date")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel        Channel?               @relation(fields: [channelId], references: [id])
+  customer       Customer               @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  items          OrderItem[]
+  reservations   InventoryReservation[]
+  timelineEvents OrderTimelineEvent[]
+  shipments      Shipment[]
+
+  @@unique([organizationId, channelId, externalOrderId])
+  @@index([organizationId])
+  @@index([channelId])
+  @@index([customerId])
+  @@index([status])
+  @@index([orderDate])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id               String  @id @default(uuid())
+  orderId          String  @map("order_id")
+  skuId            String  @map("sku_id")
+  externalItemId   String? @map("external_item_id")
+  name             String
+  variantName      String? @map("variant_name")
+  quantity         Int
+  unitPrice        Float   @map("unit_price")
+  totalPrice       Float   @map("total_price")
+  taxAmount        Float   @map("tax_amount")
+  discountAmount   Float   @map("discount_amount")
+  metadata         Json?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku           SKU            @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  shipmentItems ShipmentItem[]
+
+  @@index([orderId])
+  @@index([skuId])
+  @@map("order_items")
+}
+
+enum OrderStatus {
+  NEW
+  RESERVED
+  PAID
+  READY_TO_SHIP
+  PICKED
+  PACKED
+  SHIPPED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+  RETURNED
+
+  @@map("order_status")
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  PARTIALLY_REFUNDED
+  REFUNDED
+  FAILED
+
+  @@map("payment_status")
+}
+
+model OrderTimelineEvent {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  orderId        String    @map("order_id")
+  event          String
+  fromStatus     String?   @map("from_status")
+  toStatus       String?   @map("to_status")
+  actorType      ActorType @map("actor_type")
+  actorId        String?   @map("actor_id")
+  metadata       Json?
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("order_timeline_events")
+}
+
+enum ActorType {
+  USER
+  SYSTEM
+  CHANNEL
+  CARRIER
+
+  @@map("actor_type")
+}
+
+// ============================================================================
+// SHIPPING
+// ============================================================================
+
+model ShippingAccount {
+  id             String          @id @default(uuid())
+  organizationId String          @map("organization_id")
+  carrierType    ShippingCarrier @map("carrier_type")
+  name           String
+  credentials    Json            // Encrypted credentials
+  testMode       Boolean         @default(false) @map("test_mode")
+  webhookSecret  String?         @map("webhook_secret")
+  isActive       Boolean         @default(true) @map("is_active")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  shipments    Shipment[]
+
+  @@unique([organizationId, carrierType, name])
+  @@index([organizationId])
+  @@index([organizationId, carrierType])
+  @@map("shipping_accounts")
+}
+
+enum ShippingCarrier {
+  DHL
+  FEDEX
+
+  @@map("shipping_carrier")
+}
+
+model Shipment {
+  id                 String          @id @default(uuid())
+  organizationId     String          @map("organization_id")
+  orderId            String          @map("order_id")
+  carrierType        ShippingCarrier @map("carrier_type")
+  shippingAccountId  String          @map("shipping_account_id")
+  carrierShipmentId  String?         @map("carrier_shipment_id")
+  trackingNumber     String?         @map("tracking_number")
+  status             ShipmentStatus
+  serviceCode        String?         @map("service_code")
+  serviceOptions     Json?           @map("service_options")
+  labelMeta          Json?           @map("label_meta")
+  cost               Decimal?        @db.Decimal(10, 2)
+  estimatedDelivery  DateTime?       @map("estimated_delivery")
+  actualDelivery     DateTime?       @map("actual_delivery")
+  metadata           Json?
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  order           Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shippingAccount ShippingAccount @relation(fields: [shippingAccountId], references: [id], onDelete: Cascade)
+  items           ShipmentItem[]
+  events          ShipmentEvent[]
+  trackings       ShipmentTracking[]
+
+  @@unique([organizationId, orderId, carrierType])
+  @@index([organizationId])
+  @@index([orderId])
+  @@index([carrierShipmentId])
+  @@index([trackingNumber])
+  @@index([status])
+  @@map("shipments")
+}
+
+model ShipmentItem {
+  id          String   @id @default(uuid())
+  shipmentId  String   @map("shipment_id")
+  orderItemId String   @map("order_item_id")
+  quantity    Int
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  shipment  Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([orderItemId])
+  @@map("shipment_items")
+}
+
+model ShipmentEvent {
+  id             String   @id @default(uuid())
+  shipmentId     String   @map("shipment_id")
+  organizationId String   @map("organization_id")
+  eventType      String   @map("event_type")
+  status         String?
+  description    String?  @db.Text
+  location       String?
+  raw            Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  shipment     Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([organizationId])
+  @@index([createdAt])
+  @@map("shipment_events")
+}
+
+model ShipmentTracking {
+  id             String         @id @default(uuid())
+  shipmentId     String         @map("shipment_id")
+  carrierStatus  String         @map("carrier_status")
+  mappedStatus   ShipmentStatus @map("mapped_status")
+  location       String?
+  description    String?        @db.Text
+  eventTime      DateTime?      @map("event_time")
+  raw            Json?
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  // Relations
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([createdAt])
+  @@map("shipment_trackings")
+}
+
+model ProcessedShipmentJob {
+  id          String    @id @default(uuid())
+  jobId       String    @unique @map("job_id")
+  orgId       String    @map("org_id")
+  jobType     String    @map("job_type")
+  processedAt DateTime? @map("processed_at")
+  result      Json?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([orgId])
+  @@index([jobType])
+  @@map("processed_shipment_jobs")
+}
+
+enum ShipmentStatus {
+  CREATED
+  BOOKED
+  LABEL_CREATED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  EXCEPTION
+  CANCELLED
+  RETURNED
+
+  @@map("shipment_status")
+}
+
+// ============================================================================
+// INTEGRATIONS & WEBHOOKS
+// ============================================================================
+
+model WebhookEvent {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  channelId      String?  @map("channel_id")
+  event          String
+  payload        Json
+  processedAt    DateTime? @map("processed_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel?     @relation(fields: [channelId], references: [id])
+
+  @@index([organizationId])
+  @@index([channelId])
+  @@index([createdAt])
+  @@map("webhook_events")
+}
+
+model IntegrationLog {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  channelId      String?      @map("channel_id")
+  integrationType IntegrationType @map("integration_type")
+  direction      LogDirection
+  endpoint       String
+  method         String
+  statusCode     Int?         @map("status_code")
+  request        Json?
+  response       Json?
+  errorMessage   String?      @map("error_message") @db.Text
+  durationMs     Int?         @map("duration_ms")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel?     @relation(fields: [channelId], references: [id])
+
+  @@index([organizationId])
+  @@index([channelId])
+  @@index([createdAt])
+  @@map("integration_logs")
+}
+
+enum IntegrationType {
+  SHOPIFY
+  WOOCOMMERCE
+  DHL
+  FEDEX
+
+  @@map("integration_type")
+}
+
+enum LogDirection {
+  OUTBOUND // Our request to external API
+  INBOUND  // External webhook/callback to us
+
+  @@map("log_direction")
+}
+
+// ============================================================================
+// WEBHOOK EVENT TRACKING
+// ============================================================================
+
+model ProcessedWebhookEvent {
+  id                String   @id @default(uuid())
+  organizationId    String   @map("organization_id")
+  channelId         String?  @map("channel_id") // Null for carrier webhooks
+  source            String   // "shopify", "woocommerce", "dhl", "fedex"
+  eventType         String   @map("event_type") // "orders/create", "tracking/update", etc.
+  externalEventId   String   @map("external_event_id") // ID from external system
+  status            WebhookStatus @default(ENQUEUED)
+  payload           Json     // Raw webhook payload
+  processedAt       DateTime? @map("processed_at")
+  errorMessage      String?  @map("error_message") @db.Text
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel?     @relation(fields: [channelId], references: [id])
+
+  @@unique([source, externalEventId])
+  @@index([organizationId])
+  @@index([channelId])
+  @@index([source])
+  @@index([status])
+  @@index([createdAt])
+  @@map("processed_webhook_events")
+}
+
+enum WebhookStatus {
+  ENQUEUED   // Webhook received and queued for processing
+  PROCESSING // Currently being processed by worker
+  COMPLETED  // Successfully processed
+  FAILED     // Failed after all retries
+
+  @@map("webhook_status")
+}
+
+// ============================================================================
+// UNMAPPED ITEMS (Data Quality)
+// ============================================================================
+
+model UnmappedItem {
+  id                String              @id @default(uuid())
+  organizationId    String              @map("organization_id")
+  channelId         String              @map("channel_id")
+  externalOrderId   String?             @map("external_order_id")
+  externalItemId    String?             @map("external_item_id")
+  externalSku       String?             @map("external_sku")
+  externalVariantId String?             @map("external_variant_id")
+  itemName          String              @map("item_name")
+  quantity          Int
+  status            UnmappedItemStatus  @default(PENDING)
+  resolution        String?             @db.Text
+  resolvedSkuId     String?             @map("resolved_sku_id")
+  resolvedAt        DateTime?           @map("resolved_at")
+  resolvedBy        String?             @map("resolved_by")
+  metadata          Json?
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([channelId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([externalOrderId])
+  @@map("unmapped_items")
+}
+
+enum UnmappedItemStatus {
+  PENDING    // Awaiting manual review
+  RESOLVED   // Mapped to SKU
+  IGNORED    // Intentionally skipped
+  FAILED     // Cannot be mapped
+
+  @@map("unmapped_item_status")
+}
